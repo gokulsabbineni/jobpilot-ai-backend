@@ -21,6 +21,7 @@ async def fetch_jobicy(client, search=None, limit=200):
         "location": x.get("jobGeo") or "Remote",
         "job_type": "CONTRACT" if "contract" in str(x.get("jobType","")).lower() else "FULL_TIME",
         "remote": True,
+        "posted_at": x.get("pubDate") or x.get("date") or x.get("jobDate"),
         "salary_min": x.get("salaryMin"),
         "salary_max": x.get("salaryMax"),
         "url": x.get("url"),
@@ -45,6 +46,7 @@ async def fetch_remotive(client, search=None, limit=100):
         "location": x.get("candidate_required_location") or "Remote",
         "job_type": "CONTRACT" if "contract" in str(x.get("job_type","")).lower() else "FULL_TIME",
         "remote": True,
+        "posted_at": x.get("publication_date") or x.get("published_at") or x.get("date"),
         "url": x.get("url"),
         "source_url": x.get("url"),
         "raw_data": x,
@@ -74,9 +76,10 @@ async def fetch_arbeitnow(client, search=None, limit=100):
         "company": x.get("company_name"),
         "title": x.get("title"),
         "description": x.get("description"),
-        "location": x.get("location") or "Remote",
+        "location": x.get("location") or "Location not specified",
         "job_type": "CONTRACT" if "contract" in str(x.get("job_types", "")).lower() else "FULL_TIME",
         "remote": bool(x.get("remote")),
+        "posted_at": x.get("created_at") or x.get("date") or x.get("published_at"),
         "url": x.get("url"),
         "source_url": x.get("url"),
         "raw_data": x,
@@ -87,6 +90,7 @@ async def fetch_himalayas(client, search=None, limit=100):
     params = {"limit": min(max(limit, 1), 100)}
     if search:
         params["q"] = search[:100]
+    params["sort"] = "recent"
     response = await client.get(
         "https://himalayas.app/jobs/api/search",
         params=params,
