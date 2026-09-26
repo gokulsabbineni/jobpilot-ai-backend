@@ -3,11 +3,11 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import active_user
-from app.models import AgentRun, Application, Job
+from app.models import AgentRun, Application, Job\nfrom app.services.application_runner import run_application
 
 r = APIRouter(prefix="/api/user/agent", tags=["agent"])
 
@@ -126,7 +126,7 @@ def status(db:Session=Depends(get_db),u=Depends(active_user)):
     return out(db.query(AgentRun).filter_by(user_id=u.id).order_by(AgentRun.id.desc()).first())
 
 @r.post("/start")
-async def start(db:Session=Depends(get_db),u=Depends(active_user)):
+async def start(background_tasks: BackgroundTasks, db:Session=Depends(get_db),u=Depends(active_user)):
     if not u.resume: raise HTTPException(400,"Upload a resume before starting the agent")
     discovered,source_errors=await discover_jobs()
     for payload in discovered: upsert_job(db,payload)
