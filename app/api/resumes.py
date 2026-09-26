@@ -1,5 +1,7 @@
 from pathlib import Path
+from urllib.parse import quote
 
+import httpx
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
 
@@ -16,7 +18,7 @@ MAX_RESUME_BYTES = 10 * 1024 * 1024
 
 
 def safe_resume_path(path_value: str | None) -> Path | None:
-    if not path_value:
+    if not path_value or path_value.startswith("supabase://"):
         return None
 
     path = Path(path_value).resolve()
@@ -28,6 +30,54 @@ def safe_resume_path(path_value: str | None) -> Path | None:
         return None
 
     return path
+
+
+def supabase_object_url(object_path: str) -> str:
+    if not settings.supabase_url:
+        raise RuntimeError("SUPABASE_URL is not configured")
+    bucket = quote(settings.supabase_storage_bucket, safe="")
+    path = quote(object_path, safe="/")
+    return f"{settings.supabase_url.rstrip('/')}/storage/v1/object/{bucket}/{path}"
+
+
+def supabase_headers() -> dict[str, str]:
+    if not settings.supabase_service_role_key:
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is not configured")
+    return {
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "apikey": settings.supabase_service_role_key,
+    }
+
+
+async def supabase_upload(object_path: str, data: bytes, content_type: str | None) -> str:
+    headers = supabase_headers()
+    headers["Content-Type"] = content_type or "application/octet-stream"
+    headers["x-upsert"] = "true"
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            supabase_object_url(object_path),
+            content=data,
+            headers=headers,
+        )
+        response.raise_for_status()
+
+    return f"supabase://{settings.supabase_storage_bucket}/{object_path}"
+
+
+async def supabase_delete(storage_reference: str) -> None:
+    prefix = f"supabase://{settings.supabase_storage_bucket}/"
+    if not storage_reference.startswith(prefix):
+        return
+
+    object_path = storage_reference[len(prefix):]
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.delete(
+            supabase_object_url(object_path),
+            headers=supabase_headers(),
+        )
+        if response.status_code not in {200, 204, 404}:
+            response.raise_for_status()
 
 
 @r.get("")
@@ -54,15 +104,21 @@ async def upload(
     if len(data) > MAX_RESUME_BYTES:
         raise HTTPException(413, "File too large")
 
-    folder = Path(settings.storage_dir)
-    folder.mkdir(parents=True, exist_ok=True)
+    old_reference = u.resume.file_path if u.resume else None
 
-    old_path = safe_resume_path(
-        u.resume.file_path if u.resume else None
-    )
-
-    path = folder / f"user_{u.id}_{name}"
-    path.write_bytes(data)
+    if settings.uses_supabase_storage:
+        object_path = f"users/{u.id}/{name}"
+        stored_reference = await supabase_upload(
+            object_path,
+            data,
+            file.content_type,
+        )
+    else:
+        folder = Path(settings.storage_dir)
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"user_{u.id}_{name}"
+        path.write_bytes(data)
+        stored_reference = str(path)
 
     resume = u.resume or Resume(
         user_id=u.id,
@@ -70,7 +126,7 @@ async def upload(
     )
 
     resume.file_name = name
-    resume.file_path = str(path)
+    resume.file_path = stored_reference
     resume.content_text = None
     resume.parsed_profile = {
         "skills": [],
@@ -84,14 +140,19 @@ async def upload(
     db.commit()
     db.refresh(resume)
 
-    if old_path and old_path != path.resolve() and old_path.exists():
-        old_path.unlink()
+    if old_reference:
+        if old_reference.startswith("supabase://"):
+            await supabase_delete(old_reference)
+        else:
+            old_path = safe_resume_path(old_reference)
+            if old_path and old_path.exists():
+                old_path.unlink()
 
     return resume
 
 
 @r.delete("")
-def delete_resume(
+async def delete_resume(
     db: Session = Depends(get_db),
     u=Depends(active_user),
 ):
@@ -100,12 +161,16 @@ def delete_resume(
     if resume is None:
         raise HTTPException(404, "No resume is currently uploaded")
 
-    stored_path = safe_resume_path(resume.file_path)
+    stored_reference = resume.file_path
 
     db.delete(resume)
     db.commit()
 
-    if stored_path and stored_path.exists():
-        stored_path.unlink()
+    if stored_reference and stored_reference.startswith("supabase://"):
+        await supabase_delete(stored_reference)
+    else:
+        stored_path = safe_resume_path(stored_reference)
+        if stored_path and stored_path.exists():
+            stored_path.unlink()
 
     return {"message": "Resume deleted successfully"}
