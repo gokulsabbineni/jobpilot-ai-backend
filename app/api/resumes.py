@@ -1,5 +1,6 @@
 from pathlib import Path
 from urllib.parse import quote
+from uuid import uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
@@ -52,7 +53,6 @@ def supabase_headers() -> dict[str, str]:
 async def supabase_upload(object_path: str, data: bytes, content_type: str | None) -> str:
     headers = supabase_headers()
     headers["Content-Type"] = content_type or "application/octet-stream"
-    headers["x-upsert"] = "true"
 
     async with httpx.AsyncClient(timeout=60) as client:
         response = await client.post(
@@ -107,7 +107,10 @@ async def upload(
     old_reference = u.resume.file_path if u.resume else None
 
     if settings.uses_supabase_storage:
-        object_path = f"users/{u.id}/{name}"
+        # Store each upload at a unique path. This avoids overwrite races,
+        # stale CDN content, and the extra Storage permissions required for
+        # upsert/update operations.
+        object_path = f"users/{u.id}/{uuid4().hex}-{name}"
         try:
             stored_reference = await supabase_upload(
                 object_path,
@@ -120,10 +123,23 @@ async def upload(
                 502,
                 f"Resume storage upload failed: {detail}",
             ) from exc
-        except (httpx.RequestError, RuntimeError) as exc:
+        except httpx.RequestError as exc:
+            print(
+                f"Resume storage network error for user {u.id}: "
+                f"{type(exc).__name__}: {exc}"
+            )
             raise HTTPException(
                 503,
-                "Resume storage is temporarily unavailable. Please try again.",
+                "Resume storage could not be reached. Please try again in a few seconds.",
+            ) from exc
+        except RuntimeError as exc:
+            print(
+                f"Resume storage configuration error for user {u.id}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            raise HTTPException(
+                503,
+                "Resume storage is not configured correctly. Please contact support.",
             ) from exc
     else:
         folder = Path(settings.storage_dir)
