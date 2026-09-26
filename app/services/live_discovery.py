@@ -53,6 +53,8 @@ async def fetch_remotive(client, search=None, limit=100):
 async def discover_for_query(db: Session, search=None, limit=200):
     result = {"discovered": 0, "errors": [], "scores": {}}
     sources = configured_sources()
+    # Sources can be supplied through JOB_SOURCES without changing application code.
+    # Example: {"provider":"career_page","url":"https://company.com/careers","search":"golang"}
     if sources:
         configured = await discover_from_sources(db, sources)
         result["discovered"] += configured["discovered"]
