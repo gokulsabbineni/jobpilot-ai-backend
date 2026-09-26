@@ -90,18 +90,21 @@ def normalize(payload: dict) -> dict:
     title = (payload.get("title") or "Untitled").strip()
     text = f"{title} {location} {description}"
     url = canonicalize_url(payload.get("url") or "")
+    explicit_remote = payload.get("remote")
+    if explicit_remote is None:
+        explicit_remote = "remote" in location.lower()
     return {
         "company": (payload.get("company") or "Unknown Company").strip(),
         "title": title,
         "description": description,
         "location": location,
         "job_type": payload.get("job_type") or infer_job_type(text),
-        "remote": bool(payload.get("remote")) or "remote" in text.lower(),
+        "remote": bool(explicit_remote),
         "salary_min": payload.get("salary_min"),
         "salary_max": payload.get("salary_max"),
         "url": url,
         "source": str(payload.get("provider") or payload.get("source") or "UNKNOWN").upper(),
-        "posted_at": payload.get("posted_at"),
+        "posted_at": parse_datetime(payload.get("posted_at")) or parse_datetime(payload.get("first_seen_at")),
         "external_id": payload.get("external_id"),
         "source_url": payload.get("source_url") or url,
         "raw_data": payload.get("raw_data") or {},
@@ -119,8 +122,12 @@ def upsert_discovery(db: Session, payload: dict) -> Job:
         job = db.get(Job, discovery.job_id)
         if job:
             for key in ("company", "title", "description", "location", "job_type",
-                        "remote", "salary_min", "salary_max", "url", "source", "posted_at"):
+                        "remote", "salary_min", "salary_max", "url", "source"):
                 setattr(job, key, item[key])
+            if item["posted_at"] is not None and (
+                job.posted_at is None or item["posted_at"] > job.posted_at
+            ):
+                job.posted_at = item["posted_at"]
             discovery.last_seen_at = datetime.now(timezone.utc)
             discovery.last_checked_at = datetime.now(timezone.utc)
             discovery.discovery_count += 1
