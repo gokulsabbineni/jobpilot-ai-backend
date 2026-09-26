@@ -35,11 +35,6 @@ def jobs(
     return query.order_by(Job.created_at.desc()).limit(100).all()
 
 
-@r.get("/{job_id}")
-def job(job_id: int, db: Session = Depends(get_db), u=Depends(active_user)):
-    return db.get(Job, job_id)
-
-
 @r.get("/discover")
 async def discover(
     url: str | None = Query(None),
@@ -70,3 +65,10 @@ async def discover(
         query=query.filter(Job.remote.is_(True))
     rows=query.order_by(Job.posted_at.desc().nullslast(),Job.created_at.desc()).limit(limit).all()
     return [{"id":x.id,"company":x.company,"title":x.title,"description":x.description,"location":x.location,"job_type":x.job_type,"remote":x.remote,"salary_min":x.salary_min,"salary_max":x.salary_max,"url":x.url,"source":x.source,"posted_at":x.posted_at,"created_at":x.created_at} for x in rows]
+
+
+@r.get("/{job_id}")
+def job(job_id: int, db: Session = Depends(get_db), u=Depends(active_user)):
+    return db.get(Job, job_id)
+
+
