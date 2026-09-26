@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.db
+storage/resumes/*
+!.gitkeep
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+storage/resumes/*
+!storage/resumes/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
