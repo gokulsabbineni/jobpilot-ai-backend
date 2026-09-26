@@ -11,11 +11,12 @@ from app.api.applications import r as applications
 from app.api.action_required import r as actions
 from app.api.agent import r as agent
 from app.api.admin import r as admin
+from app.api.application_runner import r as application_runner
 @asynccontextmanager
 async def lifespan(app): init_db(); yield
 app=FastAPI(title=settings.app_name,lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=True,allow_methods=['*'],allow_headers=['*'])
-for x in [auth,users,resumes,jobs,applications,actions,agent,admin]: app.include_router(x)
+for x in [auth,users,resumes,jobs,applications,application_runner,actions,agent,admin]: app.include_router(x)
 @app.get('/')
 def root(): return {'name':settings.app_name,'status':'ok'}
 @app.get('/health')
