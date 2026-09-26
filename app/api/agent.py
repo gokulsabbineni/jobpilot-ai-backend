@@ -7,7 +7,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import active_user
-from app.models import AgentRun, Application, Job\nfrom app.services.application_runner import run_application
+from app.models import AgentRun, Application, Job
+from app.services.application_runner import run_application
 
 r = APIRouter(prefix="/api/user/agent", tags=["agent"])
 
