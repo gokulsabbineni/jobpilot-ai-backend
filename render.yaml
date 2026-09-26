@@ -2,7 +2,7 @@ services:
   - type: web
     name: jobpilot-ai-backend
     runtime: docker
-    plan: starter
+    plan: free
     dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
@@ -16,15 +16,13 @@ services:
         value: "1440"
       - key: DATABASE_URL
         sync: false
-      - key: REDIS_URL
-        sync: false
-      - key: LLM_PROVIDER
-        value: openai
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: OPENAI_MODEL
-        value: gpt-5-mini
-      - key: STORAGE_DIR
-        value: /app/storage/resumes
       - key: CORS_ORIGINS
         sync: false
+      - key: LLM_PROVIDER
+        value: none
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: resumes
