@@ -175,9 +175,31 @@ def approve_user_again(uid: int, db: Session = Depends(get_db), u=Depends(admin_
         raise HTTPException(404, "User not found")
     if user.role == "ADMIN":
         raise HTTPException(400, "Admin accounts cannot be changed through user approval.")
+    if user.status != "REJECTED":
+        raise HTTPException(400, "Only rejected users can be approved again.")
 
     user.status = "ACTIVE"
     audit(db, u, "APPROVE_USER", uid, {"previous_status": "REJECTED"})
+    db.commit()
+    return user_summary(user)
+
+
+@r.post("/users/{uid}/reject")
+def reject_user_from_users(
+    uid: int,
+    db: Session = Depends(get_db),
+    u=Depends(admin_user),
+):
+    user = db.get(User, uid)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if user.role == "ADMIN":
+        raise HTTPException(400, "Admin accounts cannot be rejected.")
+    if user.status != "ACTIVE":
+        raise HTTPException(400, "Only active users can be rejected from the Users page.")
+
+    user.status = "REJECTED"
+    audit(db, u, "REJECT_USER", uid, {"previous_status": "ACTIVE"})
     db.commit()
     return user_summary(user)
 
@@ -188,8 +210,14 @@ def reject(uid: int, db: Session = Depends(get_db), u=Depends(admin_user)):
     if not user:
         raise HTTPException(404, "User not found")
 
+    if user.role == "ADMIN":
+        raise HTTPException(400, "Admin accounts cannot be rejected.")
+
+    if user.status != "PENDING_APPROVAL":
+        raise HTTPException(400, "Only pending users can be rejected from the approval queue.")
+
     user.status = "REJECTED"
-    audit(db, u, "REJECT_USER", uid)
+    audit(db, u, "REJECT_USER", uid, {"previous_status": "PENDING_APPROVAL"})
     db.commit()
     return user_summary(user)
 
