@@ -10,7 +10,7 @@ Requirements: Python 3.12+.
     source .venv/bin/activate
     pip install -r requirements.txt
     cp .env.example .env
-    python seed.py
+    ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='use-a-strong-password' python seed.py
     uvicorn app.main:app --reload --port 8000
 
 Health check: http://localhost:8000/health
