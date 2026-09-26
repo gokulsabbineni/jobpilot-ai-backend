@@ -39,7 +39,7 @@ def _plain_description(value):
 def _serialize(rows):
     return [{
         "id": x.id, "company": x.company, "title": x.title, "description": _plain_description(x.description),
-        "location": x.location, "job_type": x.job_type, "remote": x.remote,
+        "location": x.location, "job_type": x.job_type, "remote": (("remote" in (x.location or "").lower()) if x.source == "ARBEITNOW" else bool(x.remote)),
         "salary_min": x.salary_min, "salary_max": x.salary_max, "url": x.url,
         "source": x.source, "posted_at": x.posted_at, "created_at": x.created_at,
     } for x in rows]
