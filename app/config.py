@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-5-mini"
     storage_dir: str = "./storage/resumes"
-    cors_origins: str = "http://localhost:5173"
+    cors_origins: str = "http://localhost:5173,https://jobpilot-ai-eta.vercel.app"
 
     # Optional persistent object storage for free cloud deployments.
     supabase_url: str | None = None
