@@ -115,6 +115,35 @@ async def fetch_himalayas(client, search=None, limit=100):
     } for x in items[:limit]]
 
 
+
+
+async def fetch_job_opportunities(client, search=None, limit=50):
+    params = {"limit": min(max(limit, 1), 50), "include_description": "true"}
+    if search:
+        params["q"] = search[:100]
+    response = await client.get(
+        "https://api.jobopportunitiesapi.org/public/jobs",
+        params=params,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    items = payload.get("data", []) if isinstance(payload, dict) else []
+    return [{
+        "provider": "JOB_OPPORTUNITIES_API",
+        "external_id": str(x.get("id") or x.get("slug") or ""),
+        "company": x.get("company"),
+        "title": x.get("title"),
+        "description": x.get("description"),
+        "location": x.get("location") or x.get("city") or "Location not specified",
+        "job_type": str(x.get("employment_type") or "FULL_TIME").upper().replace(" ", "_"),
+        "remote": str(x.get("remote") or "").lower() == "remote",
+        "posted_at": x.get("posted_at") or x.get("first_seen_at"),
+        "url": x.get("apply_url"),
+        "source_url": x.get("apply_url"),
+        "raw_data": x,
+    } for x in items]
+
+
 async def discover_for_query(db: Session, search=None, limit=200):
     result = {"discovered": 0, "errors": [], "scores": {}}
     sources = configured_sources()
@@ -133,7 +162,8 @@ async def discover_for_query(db: Session, search=None, limit=200):
             ("JOBICY", lambda: fetch_jobicy(client, search, limit)),
             ("REMOTIVE", lambda: fetch_remotive(client, search, limit)),
             ("ARBEITNOW", lambda: fetch_arbeitnow(client, search, limit)),
-            ("HIMALAYAS", lambda: fetch_himalayas(client, search, limit)),
+            ("HIMALAYAS", lambda: fetch_himalayas(client, search, min(limit, 20))),
+            ("JOB_OPPORTUNITIES_API", lambda: fetch_job_opportunities(client, search, min(limit, 50))),
         ):
             try:
                 items.extend(await loader())
