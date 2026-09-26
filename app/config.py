@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     storage_dir: str = "./storage/resumes"
     cors_origins: str = "http://localhost:5173"
 
+    # Optional persistent object storage for free cloud deployments.
+    # Supabase Storage is used when both values are configured.
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
+    supabase_storage_bucket: str = "resumes"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
@@ -32,15 +38,26 @@ class Settings(BaseSettings):
             if x.strip()
         ]
 
+    @property
+    def uses_supabase_storage(self) -> bool:
+        return bool(self.supabase_url and self.supabase_service_role_key)
+
     @model_validator(mode="after")
     def validate_production(self):
         if self.environment.lower() in {"production", "prod"}:
             if self.secret_key == "change-me" or len(self.secret_key) < 32:
-                raise ValueError("SECRET_KEY must be a strong 32+ character value in production")
+                raise ValueError(
+                    "SECRET_KEY must be a strong 32+ character value in production"
+                )
             if self.debug:
                 raise ValueError("DEBUG must be false in production")
             if self.database_url.startswith("sqlite"):
                 raise ValueError("DATABASE_URL must use PostgreSQL in production")
+            if not self.uses_supabase_storage:
+                raise ValueError(
+                    "Supabase Storage must be configured in production "
+                    "so uploaded resumes survive free-host restarts"
+                )
         return self
 
 
