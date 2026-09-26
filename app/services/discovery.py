@@ -67,10 +67,21 @@ def parse_datetime(value):
         return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
         except ValueError:
             return None
     return None
+
+
+def utc_datetime(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def infer_job_type(text: str) -> str:
@@ -124,10 +135,12 @@ def upsert_discovery(db: Session, payload: dict) -> Job:
             for key in ("company", "title", "description", "location", "job_type",
                         "remote", "salary_min", "salary_max", "url", "source"):
                 setattr(job, key, item[key])
-            if item["posted_at"] is not None and (
-                job.posted_at is None or item["posted_at"] > job.posted_at
+            existing_posted_at = utc_datetime(job.posted_at)
+            incoming_posted_at = utc_datetime(item["posted_at"])
+            if incoming_posted_at is not None and (
+                existing_posted_at is None or incoming_posted_at > existing_posted_at
             ):
-                job.posted_at = item["posted_at"]
+                job.posted_at = incoming_posted_at
             discovery.last_seen_at = datetime.now(timezone.utc)
             discovery.last_checked_at = datetime.now(timezone.utc)
             discovery.discovery_count += 1
