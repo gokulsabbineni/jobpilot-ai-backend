@@ -13,7 +13,7 @@ from app.models import Resume
 
 r = APIRouter(prefix="/api/user/resume", tags=["resume"])
 
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx"}
 MAX_RESUME_BYTES = 10 * 1024 * 1024
 
 
@@ -97,7 +97,7 @@ async def upload(
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             400,
-            "Only PDF, DOCX and TXT files are supported",
+            "Only PDF, DOC and DOCX files are supported",
         )
 
     data = await file.read()
@@ -108,11 +108,23 @@ async def upload(
 
     if settings.uses_supabase_storage:
         object_path = f"users/{u.id}/{name}"
-        stored_reference = await supabase_upload(
-            object_path,
-            data,
-            file.content_type,
-        )
+        try:
+            stored_reference = await supabase_upload(
+                object_path,
+                data,
+                file.content_type,
+            )
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text[:500] or "Supabase Storage rejected the upload."
+            raise HTTPException(
+                502,
+                f"Resume storage upload failed: {detail}",
+            ) from exc
+        except (httpx.RequestError, RuntimeError) as exc:
+            raise HTTPException(
+                503,
+                "Resume storage is temporarily unavailable. Please try again.",
+            ) from exc
     else:
         folder = Path(settings.storage_dir)
         folder.mkdir(parents=True, exist_ok=True)
@@ -137,16 +149,27 @@ async def upload(
     if u.resume is None:
         db.add(resume)
 
-    db.commit()
-    db.refresh(resume)
+    try:
+        db.commit()
+        db.refresh(resume)
+    except Exception:
+        db.rollback()
+        raise
 
-    if old_reference:
-        if old_reference.startswith("supabase://"):
-            await supabase_delete(old_reference)
-        else:
-            old_path = safe_resume_path(old_reference)
-            if old_path and old_path.exists():
-                old_path.unlink()
+    # If the same filename was uploaded, Supabase has already overwritten the
+    # object. Do not delete the newly uploaded object in that case.
+    if old_reference and old_reference != stored_reference:
+        try:
+            if old_reference.startswith("supabase://"):
+                await supabase_delete(old_reference)
+            else:
+                old_path = safe_resume_path(old_reference)
+                if old_path and old_path.exists():
+                    old_path.unlink()
+        except (httpx.RequestError, httpx.HTTPStatusError):
+            # The database now points at the new resume. Cleanup of the old
+            # object can safely be retried later without failing the upload.
+            pass
 
     return resume
 
@@ -167,7 +190,13 @@ async def delete_resume(
     db.commit()
 
     if stored_reference and stored_reference.startswith("supabase://"):
-        await supabase_delete(stored_reference)
+        try:
+            await supabase_delete(stored_reference)
+        except (httpx.RequestError, httpx.HTTPStatusError) as exc:
+            raise HTTPException(
+                502,
+                "Resume was removed from your account, but cloud storage cleanup failed. Please contact support if the file still appears in storage.",
+            ) from exc
     else:
         stored_path = safe_resume_path(stored_reference)
         if stored_path and stored_path.exists():
