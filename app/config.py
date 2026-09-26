@@ -20,10 +20,13 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
 
     # Optional persistent object storage for free cloud deployments.
-    # Supabase Storage is used when both values are configured.
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
     supabase_storage_bucket: str = "resumes"
+
+    # Optional production admin bootstrap credentials.
+    admin_email: str | None = None
+    admin_password: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -32,11 +35,7 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_list(self) -> list[str]:
-        return [
-            x.strip()
-            for x in self.cors_origins.split(",")
-            if x.strip()
-        ]
+        return [x.strip() for x in self.cors_origins.split(",") if x.strip()]
 
     @property
     def uses_supabase_storage(self) -> bool:
