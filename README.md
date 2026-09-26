@@ -1,20 +1,37 @@
 # JobPilot AI Backend
 
-FastAPI backend with JWT auth, admin approval, resume upload, jobs, applications, action-required workflow, agent lifecycle, Ollama/OpenAI provider abstraction, SQLite local development and PostgreSQL-ready configuration.
+FastAPI backend for authentication, user preferences, resumes, job discovery, application preparation, action-required workflows, admin approval, and agent orchestration.
 
-## Run
+## Local development
 
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python seed.py
-uvicorn app.main:app --reload --port 8000
+Requirements: Python 3.12+.
 
-Docs: http://localhost:8000/docs
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    cp .env.example .env
+    python seed.py
+    uvicorn app.main:app --reload --port 8000
 
-Admin: admin@jobpilot.ai / Admin123!
-User: alex.johnson@example.com / User123!
-Pending: pending.user@example.com / User123!
+Health check: http://localhost:8000/health
+API docs: http://localhost:8000/docs
 
-For production, use PostgreSQL, Redis, private object storage, background workers, HTTPS, secrets management, rate limiting, migrations, monitoring and permitted job-source adapters. Do not bypass CAPTCHA/MFA/access controls.
+## Tests
+
+    pytest -q
+
+GitHub Actions runs the backend test suite on pushes and pull requests.
+
+## Production environment
+
+Use PostgreSQL for DATABASE_URL, a strong generated SECRET_KEY, ENVIRONMENT=production, DEBUG=false, an explicit CORS_ORIGINS value containing the production frontend URL, and an LLM provider/API key if AI features are enabled.
+
+Resume files are currently stored on the local filesystem. In a production deployment, attach persistent storage or replace the storage implementation with object storage before relying on uploaded resumes across deployments.
+
+## Current agent scope
+
+The current agent prepares matching application records from jobs already stored in the database. It does not yet submit forms to external employer portals. External portal automation should be added as a separate worker/browser subsystem with explicit user-controlled credentials, Action Required pauses for missing information/CAPTCHA, and strong audit logging.
+
+## Docker
+
+The Dockerfile supports a platform-provided PORT and can run locally with docker compose.
