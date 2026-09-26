@@ -89,8 +89,8 @@ async def start(db: Session = Depends(get_db), u=Depends(active_user)):
 
         db.flush()
         for app in candidates:
-            result = await run_application(db, app, u)
-            status_value = result.get("status")
+            result = await run_application(db, u, app)
+            status_value = getattr(result, "status", None)
             if status_value == "SUBMITTED":
                 run.applications_submitted += 1
             elif status_value == "ACTION_REQUIRED":
