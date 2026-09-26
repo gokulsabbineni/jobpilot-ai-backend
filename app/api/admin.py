@@ -168,6 +168,20 @@ def approve(uid: int, db: Session = Depends(get_db), u=Depends(admin_user)):
     return user_summary(user)
 
 
+@r.post("/users/{uid}/approve")
+def approve_user_again(uid: int, db: Session = Depends(get_db), u=Depends(admin_user)):
+    user = db.get(User, uid)
+    if not user:
+        raise HTTPException(404, "User not found")
+    if user.role == "ADMIN":
+        raise HTTPException(400, "Admin accounts cannot be changed through user approval.")
+
+    user.status = "ACTIVE"
+    audit(db, u, "APPROVE_USER", uid, {"previous_status": "REJECTED"})
+    db.commit()
+    return user_summary(user)
+
+
 @r.post("/approvals/{uid}/reject")
 def reject(uid: int, db: Session = Depends(get_db), u=Depends(admin_user)):
     user = db.get(User, uid)
