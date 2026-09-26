@@ -88,7 +88,7 @@ async def fetch_himalayas(client, search=None, limit=100):
     if search:
         params["q"] = search[:100]
     response = await client.get(
-        "https://himalayas.app/jobs/api",
+        "https://himalayas.app/jobs/api/search",
         params=params,
     )
     response.raise_for_status()
