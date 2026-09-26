@@ -22,29 +22,37 @@ def out(run):
     }
 
 
+def _norm(value):
+    return " ".join(str(value or "").lower().replace("-", " ").replace("_", " ").split())
+
 def matches_preferences(job, preferences):
     if not preferences:
         return True
-    if preferences.job_types and job.job_type and job.job_type not in preferences.job_types:
-        return False
-    if preferences.locations:
-        hay = (job.location or "").lower()
-        if not any(x.lower() in hay for x in preferences.locations) and not job.remote:
+    job_type = _norm(job.job_type)
+    if preferences.job_types:
+        wanted = {_norm(x) for x in preferences.job_types}
+        if job_type and not any(w == job_type for w in wanted):
             return False
-    if preferences.remote_preference == "REMOTE" and not job.remote:
+    if preferences.locations:
+        hay = _norm(job.location)
+        wanted = [_norm(x) for x in preferences.locations]
+        if not any(x in hay for x in wanted) and not job.remote:
+            return False
+    remote_pref = _norm(preferences.remote_preference)
+    if remote_pref in {"remote", "remote only"} and not job.remote:
         return False
-    if preferences.remote_preference == "ONSITE" and job.remote:
+    if remote_pref in {"onsite", "on site"} and job.remote:
         return False
     if preferences.salary_min and job.salary_max and job.salary_max < preferences.salary_min:
         return False
     if preferences.salary_max and job.salary_min and job.salary_min > preferences.salary_max:
         return False
     if preferences.job_titles:
-        title = (job.title or "").lower()
-        if not any(x.lower() in title or title in x.lower() for x in preferences.job_titles):
+        title = _norm(job.title)
+        requested = [_norm(x) for x in preferences.job_titles if _norm(x)]
+        if requested and not any(wanted in title or title in wanted or any(word in title.split() for word in wanted.split() if len(word) > 2) for wanted in requested):
             return False
     return True
-
 
 @r.get("")
 def status(db: Session = Depends(get_db), u=Depends(active_user)):
@@ -67,6 +75,9 @@ async def start(db: Session = Depends(get_db), u=Depends(active_user)):
 
         jobs = db.query(Job).order_by(Job.posted_at.desc().nullslast(), Job.created_at.desc()).limit(5000).all()
         matching = [job for job in jobs if matches_preferences(job, u.preferences)]
+        if not matching and search:
+            discovered_ids = set(discovery.get("scores", {}).keys())
+            matching = [job for job in jobs if str(job.id) in discovered_ids]
         run.jobs_scanned = len(jobs)
 
         # Free-tier safe cap: submit a small batch synchronously; leave the rest READY
