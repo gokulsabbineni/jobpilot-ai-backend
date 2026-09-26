@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from html import unescape
 import re
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.db import get_db
 from app.deps import active_user
 from app.models import Job
@@ -25,7 +26,7 @@ def _query_jobs(db, search=None, company=None, source=None, job_type=None, remot
         query = query.filter(Job.job_type == job_type)
     if remote is True:
         query = query.filter(Job.remote.is_(True))
-    return query.order_by(Job.posted_at.desc().nullslast(), Job.created_at.desc()).limit(limit).all()
+    return query.order_by(func.coalesce(Job.posted_at, Job.created_at).desc(), Job.id.desc()).limit(limit).all()
 
 
 def _plain_description(value):
@@ -49,7 +50,7 @@ async def jobs(
     search: str | None = Query(None),
     job_type: str | None = Query(None),
     remote: bool | None = Query(None),
-    limit: int = Query(100, ge=1, le=100),
+    limit: int = Query(200, ge=1, le=200),
     db: Session = Depends(get_db),
     u=Depends(active_user),
 ):
