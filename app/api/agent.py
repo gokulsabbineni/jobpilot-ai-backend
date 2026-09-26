@@ -99,15 +99,20 @@ async def start(db: Session = Depends(get_db), u=Depends(active_user)):
                 break
 
         db.flush()
-        for app in candidates:
-            result = await run_application(db, u, app)
-            status_value = getattr(result, "status", None)
-            if status_value == "SUBMITTED":
-                run.applications_submitted += 1
-            elif status_value == "ACTION_REQUIRED":
-                run.applications_action_required += 1
-            elif status_value in {"FAILED", "RETRY"}:
-                run.applications_failed += 1
+
+        # Respect the user's Auto Apply preference. Discovery and matching still
+        # create READY application records, but browser submission only happens
+        # when the user explicitly enables auto_apply.
+        if u.preferences and u.preferences.auto_apply:
+            for app in candidates:
+                result = await run_application(db, u, app)
+                status_value = getattr(result, "status", None)
+                if status_value == "SUBMITTED":
+                    run.applications_submitted += 1
+                elif status_value == "ACTION_REQUIRED":
+                    run.applications_action_required += 1
+                elif status_value in {"FAILED", "RETRY"}:
+                    run.applications_failed += 1
 
         run.status = "COMPLETED_WITH_WARNINGS" if discovery.get("errors") else "COMPLETED"
         run.error_message = "; ".join(discovery.get("errors", []))[:4000] if discovery.get("errors") else None
