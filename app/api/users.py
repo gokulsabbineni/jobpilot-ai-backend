@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import active_user
+from app.schemas import Preferences
 from app.models import User, UserPreferences, Job
 
 
@@ -52,7 +53,7 @@ def prefs(db: Session = Depends(get_db), u=Depends(active_user)):
 
 
 @r.put("/preferences")
-def set_prefs(p, db: Session = Depends(get_db), u=Depends(active_user)):
+def set_prefs(p: Preferences, db: Session = Depends(get_db), u=Depends(active_user)):
     x = db.query(UserPreferences).filter_by(user_id=u.id).first()
     if x is None:
         x = UserPreferences(user_id=u.id)
