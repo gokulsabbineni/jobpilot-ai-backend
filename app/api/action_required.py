@@ -30,6 +30,7 @@ def serialize(item: ActionRequired):
             {
                 "id": application.id,
                 "status": application.status,
+                "application_url": application.external_url,
                 "job": (
                     {
                         "id": job.id,
@@ -37,8 +38,6 @@ def serialize(item: ActionRequired):
                         "title": job.title,
                         "location": job.location,
                         "url": job.url,
-                    },
-                "application_url": application.external_url,
                     }
                     if job
                     else None
