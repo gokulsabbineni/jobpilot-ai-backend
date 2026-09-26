@@ -1,4 +1,6 @@
 from fastapi import APIRouter, Depends, Query
+from html import unescape
+import re
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.deps import active_user
@@ -26,9 +28,16 @@ def _query_jobs(db, search=None, company=None, source=None, job_type=None, remot
     return query.order_by(Job.posted_at.desc().nullslast(), Job.created_at.desc()).limit(limit).all()
 
 
+def _plain_description(value):
+    if not value:
+        return value
+    text = re.sub(r"<[^>]+>", " ", value)
+    return re.sub(r"\\s+", " ", unescape(text)).strip()
+
+
 def _serialize(rows):
     return [{
-        "id": x.id, "company": x.company, "title": x.title, "description": x.description,
+        "id": x.id, "company": x.company, "title": x.title, "description": _plain_description(x.description),
         "location": x.location, "job_type": x.job_type, "remote": x.remote,
         "salary_min": x.salary_min, "salary_max": x.salary_max, "url": x.url,
         "source": x.source, "posted_at": x.posted_at, "created_at": x.created_at,
