@@ -37,6 +37,8 @@ def serialize(item: ActionRequired):
                         "title": job.title,
                         "location": job.location,
                         "url": job.url,
+                    },
+                "application_url": application.external_url,
                     }
                     if job
                     else None
