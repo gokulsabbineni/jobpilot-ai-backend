@@ -134,3 +134,22 @@ class SystemSetting(Base):
     key=Column(String(100),unique=True)
     value=Column(JSON)
     updated_at=Column(DateTime(timezone=True),default=now,onupdate=now)
+
+
+class JobDiscovery(Base):
+    __tablename__='job_discoveries'
+    id=Column(Integer,primary_key=True)
+    job_id=Column(Integer,ForeignKey('jobs.id'),unique=True,nullable=False,index=True)
+    canonical_url=Column(String(1200),nullable=False,index=True)
+    fingerprint=Column(String(128),unique=True,index=True,nullable=False)
+    external_id=Column(String(255),index=True)
+    provider=Column(String(80),nullable=False,index=True)
+    source_url=Column(String(1200))
+    first_seen_at=Column(DateTime(timezone=True),default=now,index=True)
+    last_seen_at=Column(DateTime(timezone=True),default=now,index=True)
+    last_checked_at=Column(DateTime(timezone=True))
+    active=Column(Boolean,default=True,index=True)
+    discovery_count=Column(Integer,default=1,nullable=False)
+    raw_data=Column(JSON,default=dict)
+    crawl_error=Column(Text)
+    job=relationship('Job',backref='discovery')
