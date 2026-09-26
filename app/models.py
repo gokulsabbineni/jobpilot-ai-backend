@@ -139,7 +139,7 @@ class SystemSetting(Base):
 class JobDiscovery(Base):
     __tablename__='job_discoveries'
     id=Column(Integer,primary_key=True)
-    job_id=Column(Integer,ForeignKey('jobs.id'),unique=True,nullable=False,index=True)
+    job_id=Column(Integer,ForeignKey('jobs.id'),nullable=False,index=True)
     canonical_url=Column(String(1200),nullable=False,index=True)
     fingerprint=Column(String(128),unique=True,index=True,nullable=False)
     external_id=Column(String(255),index=True)
