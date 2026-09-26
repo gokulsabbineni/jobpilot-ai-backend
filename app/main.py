@@ -39,6 +39,7 @@ for x in [
     users,
     resumes,
     jobs,
+    applications,
     application_runner,
     actions,
     agent,
