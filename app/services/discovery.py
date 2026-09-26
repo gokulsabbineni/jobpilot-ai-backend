@@ -245,6 +245,45 @@ async def fetch_ashby(client, board):
     return result
 
 
+async def fetch_smartrecruiters(client, company, search=None, limit=100):
+    items = []
+    offset = 0
+    while True:
+        params = {"limit": min(limit, 100), "offset": offset}
+        if search:
+            params["q"] = search[:100]
+        response = await client.get(
+            f"https://api.smartrecruiters.com/v1/companies/{company}/postings",
+            params=params,
+        )
+        response.raise_for_status()
+        data = response.json()
+        page = data.get("content", [])
+        if not page:
+            break
+        for item in page:
+            loc = item.get("location") or {}
+            location = ", ".join(str(x) for x in [loc.get("city"), loc.get("region"), loc.get("country")] if x)
+            items.append({
+                "provider": "SMARTRECRUITERS",
+                "external_id": str(item.get("id") or item.get("uuid") or ""),
+                "company": (item.get("company") or {}).get("name") or company,
+                "title": item.get("name"),
+                "description": (item.get("jobAd") or {}).get("jobDescription") or "",
+                "location": location or "United States",
+                "job_type": infer_job_type(str((item.get("typeOfEmployment") or {}).get("label") or "")),
+                "remote": bool(loc.get("remote")) or bool(loc.get("hybrid")),
+                "url": item.get("applyUrl") or item.get("ref"),
+                "posted_at": parse_datetime(item.get("releasedDate")),
+                "source_url": f"https://careers.smartrecruiters.com/{company}",
+                "raw_data": item,
+            })
+        offset += len(page)
+        if len(page) < params["limit"] or offset >= int(data.get("totalFound", 0) or 0) or offset >= 1000:
+            break
+    return items
+
+
 async def fetch_json_api(client, url):
     response = await client.get(url)
     response.raise_for_status()
@@ -267,6 +306,11 @@ async def discover_from_sources(db: Session, sources: list[dict]):
                     items = await fetch_lever(client, str(source["site"]))
                 elif provider == "ashby":
                     items = await fetch_ashby(client, str(source["board"]))
+                elif provider == "smartrecruiters":
+                    items = await fetch_smartrecruiters(client, str(source["company"]), source.get("search"))
+                elif provider == "career_page":
+                    from app.services.career_crawler import crawl
+                    items = await crawl(client, str(source["url"]), source.get("search"))
                 elif provider == "json":
                     items = await fetch_json_api(client, str(source["url"]))
                 else:
