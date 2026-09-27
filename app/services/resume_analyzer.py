@@ -201,6 +201,55 @@ def analyze_resume(text, preferences=None, jobs=None):
     if action_ratio >= .5:
         strengths.append("Good use of accomplishment-focused action language")
 
+    quick_fixes = []
+
+    # Provide copy/replace-ready edits. These preserve the candidate's existing
+    # facts rather than inventing achievements or metrics.
+    for bullet in weak[:8]:
+        replacement = re.sub(r"^responsible for\\s+", "Owned ", bullet, flags=re.I)
+        replacement = re.sub(r"^worked on\\s+", "Contributed to ", replacement, flags=re.I)
+        replacement = re.sub(r"^helped\\s+", "Supported ", replacement, flags=re.I)
+        replacement = re.sub(r"^assisted\\s+", "Supported ", replacement, flags=re.I)
+        replacement = re.sub(r"^participated in\\s+", "Contributed to ", replacement, flags=re.I)
+        replacement = re.sub(r"^involved in\\s+", "Contributed to ", replacement, flags=re.I)
+        if replacement != bullet:
+            quick_fixes.append({
+                "type": "BULLET_REWRITE",
+                "category": "Impact",
+                "original": bullet,
+                "replacement": replacement,
+                "note": "This keeps the original claim but uses clearer, accomplishment-oriented language. Add a real outcome or metric if you have one."
+            })
+
+    if "summary" not in sections:
+        role_name = target_titles[0] if target_titles else "Software Engineer"
+        skill_text = ", ".join(role_matches[:6])
+        template = (
+            f"{role_name} with experience in {skill_text}. "
+            "Experienced in building, improving, and supporting production software systems. "
+            "Focused on delivering reliable, scalable solutions and measurable business impact."
+            if skill_text else
+            f"{role_name} with experience building and supporting production software systems. "
+            "Focused on delivering reliable, scalable solutions and measurable business impact."
+        )
+        quick_fixes.append({
+            "type": "SUMMARY_TEMPLATE",
+            "category": "Positioning",
+            "original": "",
+            "replacement": template,
+            "note": "Use this as a starting point and edit it so every statement is true for your actual experience."
+        })
+
+    if market_gaps:
+        quick_fixes.append({
+            "type": "SKILL_GAP",
+            "category": "Market Alignment",
+            "original": "",
+            "replacement": "Add only the following skills to your Skills section if you genuinely have hands-on experience: " +
+                           ", ".join(x["skill"] for x in sorted(market_gaps, key=lambda x: -x["frequency"])[:8]),
+            "note": "These skills appeared frequently in the target jobs JobPilot analyzed; do not add skills you cannot support in an interview."
+        })
+
     recommendations = []
     for item in sorted(issues, key=lambda x: {"HIGH": 0, "MEDIUM": 1, "LOW": 2}[x["severity"]]):
         recommendations.append({
@@ -217,6 +266,7 @@ def analyze_resume(text, preferences=None, jobs=None):
         "issues": issues,
         "strengths": strengths,
         "recommendations": recommendations,
+        "quick_fixes": quick_fixes,
         "role_skills": [{"skill": s, "present": s in role_matches} for s in role_skills],
         "market_skills": sorted(market, key=lambda x: -x["frequency"])[:15],
         "stats": {
