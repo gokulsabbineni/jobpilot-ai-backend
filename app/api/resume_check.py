@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Resume
 from app.models_resume_check import ResumeCheck
-from app.auth import active_user
+from app.deps import active_user
 from app.services.resume_analyzer import analyze_resume
 
 r=APIRouter(prefix="/api/user/resume-check",tags=["resume-check"])
