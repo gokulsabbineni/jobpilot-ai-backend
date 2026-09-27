@@ -5,6 +5,8 @@ from playwright.async_api import async_playwright
 
 from app.models import ActionRequired
 from app.services.resume_storage import cleanup_materialized_resume, materialize_resume
+from app.providers.registry import application_provider_for
+from app.providers.ats import application_hints
 
 CAPTCHA_TERMS = ("captcha", "recaptcha", "hcaptcha", "verify you are human", "cloudflare")
 UNKNOWN_REQUIRED_TERMS = ("ssn", "social security", "date of birth", "bank account", "credit card")
@@ -20,7 +22,10 @@ async def run_application(db, user, application):
     try:
         result = await _browser_run(user, application)
         application.status = result["status"]
-        application.application_data = result.get("data", {})
+        data = result.get("data", {})
+        data["provider"] = application_provider_for(application)
+        data["provider_hints"] = application_hints(application.external_url)
+        application.application_data = data
         if application.status == "SUBMITTED":
             application.submitted_at = datetime.now(timezone.utc)
         if application.status in {"ACTION_REQUIRED", "BLOCKED"}:
