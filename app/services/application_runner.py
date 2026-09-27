@@ -6,7 +6,7 @@ from playwright.async_api import async_playwright
 from app.models import ActionRequired
 from app.services.resume_storage import cleanup_materialized_resume, materialize_resume
 from app.providers.registry import application_provider_for
-from app.providers.ats import application_hints
+from app.providers.ats import application_hints, fill_profile_fields, find_resume_input, find_submit_control
 
 CAPTCHA_TERMS = ("captcha", "recaptcha", "hcaptcha", "verify you are human", "cloudflare")
 UNKNOWN_REQUIRED_TERMS = ("ssn", "social security", "date of birth", "bank account", "credit card")
@@ -68,31 +68,19 @@ async def _browser_run(user, application):
                 return {"status": "ACTION_REQUIRED", "type": "SENSITIVE_DATA", "title": "Sensitive information requested",
                         "description": "The application requests sensitive information that JobPilot will not guess or fabricate."}
 
-            values = {"first name": user.first_name, "last name": user.last_name, "email": user.email}
-            filled = []
-            for label, value in values.items():
-                if not value:
-                    continue
-                locator = page.get_by_label(re.compile(label, re.I))
-                if await locator.count():
-                    try:
-                        await locator.first.fill(value)
-                        filled.append(label)
-                    except Exception:
-                        pass
+            provider = application_provider_for(application)
+            filled = await fill_profile_fields(page, provider, user)
 
             if user.resume:
                 resume_path = await materialize_resume(user.resume.file_path)
             if resume_path:
-                for selector in ("input[type=file]", "input[name*=resume i]", "input[accept*=pdf i]"):
-                    locator = page.locator(selector)
-                    if await locator.count():
-                        try:
-                            await locator.first.set_input_files(resume_path)
-                            filled.append("resume")
-                            break
-                        except Exception:
-                            pass
+                resume_input = await find_resume_input(page, provider)
+                if resume_input:
+                    try:
+                        await resume_input.set_input_files(resume_path)
+                        filled.append("resume")
+                    except Exception:
+                        pass
 
             required = page.locator("input[required], textarea[required], select[required]")
             for i in range(min(await required.count(), 25)):
@@ -107,10 +95,8 @@ async def _browser_run(user, application):
                                 "description": "A required field could not be safely determined from your profile.",
                                 "data": {"filled": filled, "url": page.url}}
 
-            submit = page.get_by_role("button", name=re.compile(r"submit application|submit|apply", re.I))
-            if await submit.count() == 0:
-                submit = page.locator("input[type=submit], button[type=submit]")
-            if await submit.count() == 0:
+            submit = await find_submit_control(page, provider)
+            if not submit:
                 return {"status": "ACTION_REQUIRED", "type": "UNSUPPORTED_FLOW", "title": "Application flow needs review",
                         "description": "JobPilot reached the application page but could not identify a safe submission control.",
                         "data": {"filled": filled, "url": page.url}}
