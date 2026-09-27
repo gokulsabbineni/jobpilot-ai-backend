@@ -1,6 +1,9 @@
-import asyncio\nfrom datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException\n\nfrom app.config import settings
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.config import settings
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -8,10 +11,16 @@ from app.deps import active_user
 from app.models import AgentRun, Application, Job, User
 from app.services.agent_access import get_or_create_entitlement, get_usage, capabilities
 from app.services.application_runner import run_application
-from app.services.live_discovery import discover_for_query\nfrom app.db import SessionLocal
+from app.services.live_discovery import discover_for_query
+from app.db import SessionLocal
 
 
-r = APIRouter(prefix="/api/user/agent", tags=["agent"])\n\n_agent_tasks = {}\n\ndef get_session():\n    return SessionLocal()
+r = APIRouter(prefix="/api/user/agent", tags=["agent"])
+
+_agent_tasks = {}
+
+def get_session():
+    return SessionLocal()
 
 
 def out(run):
