@@ -1,17 +1,17 @@
-from datetime import datetime, timezone
+import asyncio\nfrom datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException\n\nfrom app.config import settings
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.deps import active_user
-from app.models import AgentRun, Application, Job
+from app.models import AgentRun, Application, Job, User
 from app.services.agent_access import get_or_create_entitlement, get_usage, capabilities
 from app.services.application_runner import run_application
-from app.services.live_discovery import discover_for_query
+from app.services.live_discovery import discover_for_query\nfrom app.db import SessionLocal
 
 
-r = APIRouter(prefix="/api/user/agent", tags=["agent"])
+r = APIRouter(prefix="/api/user/agent", tags=["agent"])\n\n_agent_tasks = {}\n\ndef get_session():\n    return SessionLocal()
 
 
 def out(run):
@@ -146,26 +146,25 @@ def access(db: Session = Depends(get_db), u=Depends(active_user)):
     }
 
 
-@r.post("/start")
-async def start(db: Session = Depends(get_db), u=Depends(active_user)):
-    if not u.resume:
-        raise HTTPException(400, "Upload a resume before starting the agent")
-
-    entitlement = get_or_create_entitlement(db, u.id)
-    usage = get_usage(db, u.id)
-
-    if usage.discovery_requests >= entitlement.daily_discovery_limit:
-        raise HTTPException(429, "Daily discovery limit reached. Try again tomorrow.")
-
-    run = AgentRun(
-        user_id=u.id,
-        status="RUNNING",
-        started_at=datetime.now(timezone.utc),
-    )
-    db.add(run)
-    db.flush()
-
+async def _run_cycle(user_id: int, run_id: int):
+    """Run one discovery/apply cycle for a continuously running agent."""
+    db = get_session()
     try:
+        u = db.get(__import__("app.models", fromlist=["User"]).User, user_id)
+        run = db.get(AgentRun, run_id)
+        if not u or not run:
+            return False
+
+        entitlement = get_or_create_entitlement(db, u.id)
+        usage = get_usage(db, u.id)
+
+        if usage.discovery_requests >= entitlement.daily_discovery_limit:
+            run.status = "COMPLETED_WITH_WARNINGS"
+            run.error_message = "Daily discovery limit reached. The agent will resume tomorrow."
+            run.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            return False
+
         search_terms = (
             u.preferences.job_titles
             if u.preferences and u.preferences.job_titles
@@ -174,38 +173,27 @@ async def start(db: Session = Depends(get_db), u=Depends(active_user)):
         search = " ".join(search_terms[:3]) if search_terms else None
 
         usage.discovery_requests += 1
-
-        # Provider selection is entitlement-aware. Paid providers remain disabled
-        # until their credentials are configured; the free stack still runs.
         discovery = await discover_for_query(db, search=search, limit=100)
         usage.jobs_discovered += int(discovery.get("discovered", 0) or 0)
         db.flush()
 
-        jobs = (
-            db.query(Job)
-            .limit(5000)
-            .all()
-        )
-
+        jobs = db.query(Job).limit(5000).all()
         run.jobs_scanned = len(jobs)
 
-        # First filter by the user's requirements. Only then apply the
-        # recency queue so a newer irrelevant job can never jump ahead of a
-        # newer relevant job.
+        # Filter first, then rank. Recency is the primary application priority.
         matching = [job for job in jobs if matches_preferences(job, u.preferences)]
         if not matching and search:
             discovered_ids = set(discovery.get("scores", {}).keys())
             matching = [job for job in jobs if str(job.id) in discovered_ids]
-
         matching = prioritize_jobs(matching)
 
-        candidates = []
-        remaining_applications = max(
+        remaining = max(
             0,
             entitlement.daily_application_limit - usage.applications_attempted,
         )
-        batch_limit = min(10, remaining_applications)
+        batch_limit = min(10, remaining)
 
+        candidates = []
         for job in matching:
             if len(candidates) >= batch_limit:
                 break
@@ -234,6 +222,13 @@ async def start(db: Session = Depends(get_db), u=Depends(active_user)):
 
         if u.preferences and u.preferences.auto_apply:
             for app in candidates:
+                # Re-check the run before every application so Stop/Pause takes
+                # effect between jobs rather than waiting for the whole batch.
+                db.refresh(run)
+                if run.status != "RUNNING":
+                    db.commit()
+                    return run.status == "RUNNING"
+
                 usage.applications_attempted += 1
                 result = await run_application(db, u, app)
                 status_value = getattr(result, "status", None)
@@ -246,31 +241,91 @@ async def start(db: Session = Depends(get_db), u=Depends(active_user)):
                 elif status_value in {"FAILED", "RETRY"}:
                     run.applications_failed += 1
 
-        run.status = (
-            "COMPLETED_WITH_WARNINGS"
-            if discovery.get("errors")
-            else "COMPLETED"
-        )
-        run.error_message = (
-            "; ".join(discovery.get("errors", []))[:4000]
-            if discovery.get("errors")
-            else None
-        )
-        run.completed_at = datetime.now(timezone.utc)
+        if discovery.get("errors"):
+            run.error_message = "; ".join(discovery.get("errors", []))[:4000]
+            run.status = "COMPLETED_WITH_WARNINGS"
+        else:
+            run.error_message = None
 
         db.commit()
-        db.refresh(run)
-        return out(run)
-
-    except HTTPException:
-        db.rollback()
-        raise
+        return True
     except Exception as exc:
         db.rollback()
-        raise HTTPException(
-            500,
-            f"Agent run failed: {str(exc)[:500]}",
-        ) from exc
+        run = db.get(AgentRun, run_id)
+        if run:
+            run.status = "COMPLETED_WITH_WARNINGS"
+            run.error_message = f"Cycle failed: {str(exc)[:3500]}"
+            run.completed_at = datetime.now(timezone.utc)
+            db.commit()
+        return True
+    finally:
+        db.close()
+
+
+async def _continuous_loop(user_id: int, run_id: int):
+    """Continuously discover and process newest matching jobs."""
+    try:
+        while True:
+            db = get_session()
+            try:
+                run = db.get(AgentRun, run_id)
+                if not run or run.status != "RUNNING":
+                    return
+            finally:
+                db.close()
+
+            await _run_cycle(user_id, run_id)
+
+            db = get_session()
+            try:
+                run = db.get(AgentRun, run_id)
+                if not run or run.status != "RUNNING":
+                    return
+            finally:
+                db.close()
+
+            await asyncio.sleep(settings.agent_poll_interval_seconds)
+    except asyncio.CancelledError:
+        return
+
+
+@r.post("/start")
+async def start(db: Session = Depends(get_db), u=Depends(active_user)):
+    if not u.resume:
+        raise HTTPException(400, "Upload a resume before starting the agent")
+
+    entitlement = get_or_create_entitlement(db, u.id)
+    usage = get_usage(db, u.id)
+
+    if usage.discovery_requests >= entitlement.daily_discovery_limit:
+        raise HTTPException(429, "Daily discovery limit reached. Try again tomorrow.")
+
+    existing = (
+        db.query(AgentRun)
+        .filter_by(user_id=u.id)
+        .order_by(AgentRun.id.desc())
+        .first()
+    )
+    if existing and existing.status == "RUNNING":
+        return out(existing)
+
+    run = AgentRun(
+        user_id=u.id,
+        status="RUNNING",
+        started_at=datetime.now(timezone.utc),
+    )
+    db.add(run)
+    db.flush()
+    db.commit()
+    db.refresh(run)
+
+    task = _agent_tasks.get(u.id)
+    if task and not task.done():
+        task.cancel()
+
+    _agent_tasks[u.id] = asyncio.create_task(_continuous_loop(u.id, run.id))
+
+    return out(run)
 
 
 @r.post("/pause")
