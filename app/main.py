@@ -16,6 +16,7 @@ from app.api.agent import r as agent, resume_running_agents
 from app.api.admin import r as admin
 from app.api.admin_agent_access import r as admin_agent_access
 from app.api.application_runner import r as application_runner
+from app.api.resume_check import r as resume_check
 
 
 @asynccontextmanager
@@ -47,6 +48,7 @@ for x in [
     agent,
     admin,
     admin_agent_access,
+    resume_check,
 ]:
     app.include_router(x)
 
