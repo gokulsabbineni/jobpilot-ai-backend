@@ -3,6 +3,8 @@ from urllib.parse import quote
 from sqlalchemy.orm import Session
 
 from app.services.discovery import upsert_discovery, configured_sources, discover_from_sources
+from app.services.agent_access import get_or_create_entitlement
+from app.providers.paid import discover_with_apify, discover_with_serp
 
 
 async def fetch_jobicy(client, search=None, limit=200):
@@ -144,9 +146,10 @@ async def fetch_job_opportunities(client, search=None, limit=50):
     } for x in items]
 
 
-async def discover_for_query(db: Session, search=None, limit=200):
+async def discover_for_query(db: Session, search=None, limit=200, user_id=None):
     result = {"discovered": 0, "errors": [], "scores": {}}
     sources = configured_sources()
+    entitlement = get_or_create_entitlement(db, user_id) if user_id else None
     # Sources can be supplied through JOB_SOURCES without changing application code.
     # Example: {"provider":"career_page","url":"https://company.com/careers","search":"golang"}
     if sources:
@@ -169,6 +172,17 @@ async def discover_for_query(db: Session, search=None, limit=200):
                 items.extend(await loader())
             except Exception as exc:
                 result["errors"].append(f"{name}: {exc}")
+
+        # Optional advanced discovery providers are admin-capability gated.
+        if entitlement and entitlement.advanced_enabled and search:
+            if entitlement.serp_discovery_enabled:
+                serp = await discover_with_serp(search, limit=min(limit, 100))
+                result["errors"].extend("SERP: " + error for error in serp.errors)
+                items.extend(serp.items)
+            if entitlement.premium_crawling_enabled:
+                apify = await discover_with_apify(search, limit=min(limit, 100))
+                result["errors"].extend("APIFY: " + error for error in apify.errors)
+                items.extend(apify.items)
 
         for item in items:
             try:
