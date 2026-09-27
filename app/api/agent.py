@@ -121,6 +121,25 @@ def prioritize_jobs(jobs):
     return sorted(jobs, key=_job_recency_key, reverse=True)
 
 
+
+async def resume_running_agents():
+    """Resume agents that were RUNNING before a backend restart/deploy."""
+    db = get_session()
+    try:
+        runs = (
+            db.query(AgentRun)
+            .filter(AgentRun.status == "RUNNING")
+            .all()
+        )
+        for run in runs:
+            task = _agent_tasks.get(run.user_id)
+            if not task or task.done():
+                _agent_tasks[run.user_id] = asyncio.create_task(
+                    _continuous_loop(run.user_id, run.id)
+                )
+    finally:
+        db.close()
+
 @r.get("")
 def status(db: Session = Depends(get_db), u=Depends(active_user)):
     return out(
@@ -168,11 +187,12 @@ async def _run_cycle(user_id: int, run_id: int):
         usage = get_usage(db, u.id)
 
         if usage.discovery_requests >= entitlement.daily_discovery_limit:
-            run.status = "COMPLETED_WITH_WARNINGS"
-            run.error_message = "Daily discovery limit reached. The agent will resume tomorrow."
-            run.completed_at = datetime.now(timezone.utc)
+            # Keep the run active. The continuous loop waits for the next UTC
+            # day and then automatically resumes discovery.
+            run.status = "RUNNING"
+            run.error_message = "Daily discovery limit reached. Waiting for the next daily reset."
             db.commit()
-            return False
+            return True
 
         search_terms = (
             u.preferences.job_titles
@@ -285,6 +305,23 @@ async def _continuous_loop(user_id: int, run_id: int):
 
             await _run_cycle(user_id, run_id)
 
+            # Wait for the next UTC reset when the daily discovery allowance
+            # is exhausted; otherwise use the normal polling interval.
+            db = get_session()
+            try:
+                usage = get_usage(db, user_id)
+                entitlement = get_or_create_entitlement(db, user_id)
+                wait_seconds = settings.agent_poll_interval_seconds
+                if usage.discovery_requests >= entitlement.daily_discovery_limit:
+                    now = datetime.now(timezone.utc)
+                    next_day = (
+                        now.replace(hour=0, minute=0, second=0, microsecond=0)
+                        + __import__("datetime").timedelta(days=1)
+                    )
+                    wait_seconds = max(1, int((next_day - now).total_seconds()))
+            finally:
+                db.close()
+
             db = get_session()
             try:
                 run = db.get(AgentRun, run_id)
@@ -293,7 +330,7 @@ async def _continuous_loop(user_id: int, run_id: int):
             finally:
                 db.close()
 
-            await asyncio.sleep(settings.agent_poll_interval_seconds)
+            await asyncio.sleep(wait_seconds)
     except asyncio.CancelledError:
         return
 
