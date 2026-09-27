@@ -1,12 +1,12 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.config import settings
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+, get_db
 from app.deps import active_user
 from app.models import AgentRun, Application, Job, User
 from app.services.agent_access import get_or_create_entitlement, get_usage, capabilities
@@ -178,7 +178,7 @@ async def _run_cycle(user_id: int, run_id: int):
     """Run one discovery/apply cycle for a continuously running agent."""
     db = get_session()
     try:
-        u = db.get(__import__("app.models", fromlist=["User"]).User, user_id)
+        u = db.get(User, user_id)
         run = db.get(AgentRun, run_id)
         if not u or not run:
             return False
@@ -316,7 +316,7 @@ async def _continuous_loop(user_id: int, run_id: int):
                     now = datetime.now(timezone.utc)
                     next_day = (
                         now.replace(hour=0, minute=0, second=0, microsecond=0)
-                        + __import__("datetime").timedelta(days=1)
+                        + timedelta(days=1)
                     )
                     wait_seconds = max(1, int((next_day - now).total_seconds()))
             finally:
@@ -376,12 +376,20 @@ async def start(db: Session = Depends(get_db), u=Depends(active_user)):
 
 @r.post("/pause")
 def pause(db: Session = Depends(get_db), u=Depends(active_user)):
-    return _change(db, u, "PAUSED")
+    result = _change(db, u, "PAUSED")
+    task = _agent_tasks.get(u.id)
+    if task and not task.done():
+        task.cancel()
+    return result
 
 
 @r.post("/stop")
 def stop(db: Session = Depends(get_db), u=Depends(active_user)):
-    return _change(db, u, "STOPPED")
+    result = _change(db, u, "STOPPED")
+    task = _agent_tasks.get(u.id)
+    if task and not task.done():
+        task.cancel()
+    return result
 
 
 def _change(db, u, status):
