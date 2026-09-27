@@ -14,6 +14,7 @@ from app.api.applications import r as applications
 from app.api.action_required import r as actions
 from app.api.agent import r as agent
 from app.api.admin import r as admin
+from app.api.admin_agent_access import r as admin_agent_access
 from app.api.application_runner import r as application_runner
 
 
@@ -44,6 +45,7 @@ for x in [
     actions,
     agent,
     admin,
+    admin_agent_access,
 ]:
     app.include_router(x)
 
