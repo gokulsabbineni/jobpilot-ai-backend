@@ -12,7 +12,7 @@ from app.api.resumes import r as resumes
 from app.api.jobs import r as jobs
 from app.api.applications import r as applications
 from app.api.action_required import r as actions
-from app.api.agent import r as agent
+from app.api.agent import r as agent, resume_running_agents
 from app.api.admin import r as admin
 from app.api.admin_agent_access import r as admin_agent_access
 from app.api.application_runner import r as application_runner
@@ -22,6 +22,7 @@ from app.api.application_runner import r as application_runner
 async def lifespan(app):
     init_db()
     ensure_admin()
+    await resume_running_agents()
     yield
 
 
