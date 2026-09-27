@@ -74,6 +74,44 @@ def matches_preferences(job, preferences):
     return True
 
 
+def _job_recency_key(job):
+    """
+    Application priority is explicitly driven by posting recency.
+
+    Jobs with a known posting timestamp always come before jobs without one.
+    created_at is only a fallback when the source did not provide posted_at.
+    The timestamp is normalized to UTC so mixed source timezone formats cannot
+    change the ordering or cause comparison errors.
+    """
+    posted_at = job.posted_at
+    if posted_at is not None:
+        if posted_at.tzinfo is None:
+            posted_at = posted_at.replace(tzinfo=timezone.utc)
+        else:
+            posted_at = posted_at.astimezone(timezone.utc)
+        return (1, posted_at)
+
+    created_at = job.created_at
+    if created_at is not None:
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        else:
+            created_at = created_at.astimezone(timezone.utc)
+        return (0, created_at)
+
+    return (0, datetime.min.replace(tzinfo=timezone.utc))
+
+
+def prioritize_jobs(jobs):
+    """
+    Newest-first application queue.
+
+    This is intentionally a stable sort: when two jobs have the same
+    timestamp, their existing database order is preserved.
+    """
+    return sorted(jobs, key=_job_recency_key, reverse=True)
+
+
 @r.get("")
 def status(db: Session = Depends(get_db), u=Depends(active_user)):
     return out(
@@ -145,17 +183,21 @@ async def start(db: Session = Depends(get_db), u=Depends(active_user)):
 
         jobs = (
             db.query(Job)
-            .order_by(Job.posted_at.desc().nullslast(), Job.created_at.desc())
             .limit(5000)
             .all()
         )
 
+        run.jobs_scanned = len(jobs)
+
+        # First filter by the user's requirements. Only then apply the
+        # recency queue so a newer irrelevant job can never jump ahead of a
+        # newer relevant job.
         matching = [job for job in jobs if matches_preferences(job, u.preferences)]
         if not matching and search:
             discovered_ids = set(discovery.get("scores", {}).keys())
             matching = [job for job in jobs if str(job.id) in discovered_ids]
 
-        run.jobs_scanned = len(jobs)
+        matching = prioritize_jobs(matching)
 
         candidates = []
         remaining_applications = max(
