@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.config import settings
 from sqlalchemy.orm import Session
 
-, get_db
+from app.db import SessionLocal, get_db
 from app.deps import active_user
 from app.models import AgentRun, Application, Job, User
 from app.services.agent_access import get_or_create_entitlement, get_usage, capabilities
