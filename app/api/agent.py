@@ -202,7 +202,7 @@ async def _run_cycle(user_id: int, run_id: int):
         search = " ".join(search_terms[:3]) if search_terms else None
 
         usage.discovery_requests += 1
-        discovery = await discover_for_query(db, search=search, limit=100)
+        discovery = await discover_for_query(db, search=search, limit=100, user_id=u.id)
         usage.jobs_discovered += int(discovery.get("discovered", 0) or 0)
         db.flush()
 
