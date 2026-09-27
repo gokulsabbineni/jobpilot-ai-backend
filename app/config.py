@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     # Optional provider-layer integrations. Disabled unless explicitly configured.
     apify_api_token: str | None = None
     bright_data_serp_api_key: str | None = None
+    bright_data_customer_id: str | None = None
+    bright_data_zone: str | None = None
+    apify_job_actor_id: str | None = None
+    apify_job_actor_input_json: str | None = None
+    browserbase_api_key: str | None = None
     workday_provider_enabled: bool = False
 
 
