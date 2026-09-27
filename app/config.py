@@ -3,7 +3,8 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):\n    agent_poll_interval_seconds: int = 600
+class Settings(BaseSettings):
+    agent_poll_interval_seconds: int = 600
     app_name: str = "JobPilot AI"
     environment: str = "development"
     debug: bool = False
