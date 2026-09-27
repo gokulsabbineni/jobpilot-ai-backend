@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Resume
+from app.models import Resume, Job
 from app.models_resume_check import ResumeCheck
 from app.deps import active_user
 from app.config import settings
@@ -134,7 +134,40 @@ async def run_check(db: Session = Depends(get_db), u=Depends(active_user)):
 
     prefs = u.preferences
     pref_data = {"job_titles": prefs.job_titles if prefs else []}
-    analysis = analyze_resume(content_text, pref_data)
+
+    # Make the analysis market-aware by comparing the resume with jobs
+    # JobPilot has already discovered for the user's target role.
+    target_titles = prefs.job_titles if prefs and prefs.job_titles else []
+    market_jobs = []
+    if target_titles:
+        seen = set()
+        for term in target_titles[:5]:
+            rows = (
+                db.query(Job)
+                .filter(Job.title.ilike(f"%{term.strip()}%"))
+                .order_by(Job.posted_at.desc().nullslast())
+                .limit(50)
+                .all()
+            )
+            for job in rows:
+                if job.id not in seen:
+                    seen.add(job.id)
+                    market_jobs.append(job)
+                if len(market_jobs) >= 100:
+                    break
+            if len(market_jobs) >= 100:
+                break
+
+    job_data = [
+        {
+            "title": job.title,
+            "description": job.description,
+            "company": job.company,
+            "location": job.location,
+        }
+        for job in market_jobs
+    ]
+    analysis = analyze_resume(content_text, pref_data, job_data)
 
     x = db.query(ResumeCheck).filter(ResumeCheck.user_id == u.id).first()
     if not x:
