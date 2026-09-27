@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # Optional production admin bootstrap credentials.
     admin_email: str | None = None
     admin_password: str | None = None
+    # Optional provider-layer integrations. Disabled unless explicitly configured.
+    apify_api_token: str | None = None
+    bright_data_serp_api_key: str | None = None
+    workday_provider_enabled: bool = False
+
 
     model_config = SettingsConfigDict(
         env_file=".env",
